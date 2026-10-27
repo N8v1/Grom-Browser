@@ -51,6 +51,20 @@ Enable or disable tools from the browser's extensions menu:
 
 Site-specific behavior can change when third-party websites update.
 
+## Screenshots
+
+| Start page | Browser settings |
+| --- | --- |
+| <img src="docs/screenshots/browser-home.png" alt="Grom Browser start page" width="480"> | <img src="docs/screenshots/browser-settings.png" alt="General browser settings" width="480"> |
+
+| Privacy controls | Built-in extensions |
+| --- | --- |
+| <img src="docs/screenshots/browser-privacy.png" alt="Privacy and site permission settings" width="480"> | <img src="docs/screenshots/browser-extensions.png" alt="Built-in extensions menu" width="480"> |
+
+| Downloads | Browser menu |
+| --- | --- |
+| <img src="docs/screenshots/browser-downloads.png" alt="Downloads page" width="480"> | <img src="docs/screenshots/browser-menu.png" alt="Browser menu and shortcuts" width="480"> |
+
 ### Tools and customization
 
 - Page translation, screenshots, developer tools, and site information.
