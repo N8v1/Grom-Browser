@@ -6,7 +6,7 @@ import json
 import os
 
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -784,48 +784,30 @@ class BuiltinExtensionsMixin:
 
     def builtin_extension_icon(self, extension_id, size=36):
         definition = self.builtin_extension_definition(extension_id) or {
-            "color": "#54708f"
+            "color": "#54708f", "name": str(extension_id)
         }
-        filename = f"extension_{extension_id}.png"
-        path = (
-            self.menu_icon_path(filename)
-            if hasattr(self, "menu_icon_path")
-            else os.path.join(os.path.dirname(__file__), "menu_icons", filename)
-        )
-        if os.path.isfile(path):
-            if hasattr(self, "themed_icon"):
-                return self.themed_icon(path, self.theme_colors["icon"])
-            return QIcon(path)
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        icon_color = QColor(
-            self.theme_colors["icon"]
-            if hasattr(self, "theme_colors")
-            else definition.get("color", "#54708f")
-        )
+        icon_color = QColor(definition.get("color", "#54708f"))
         painter.setBrush(icon_color)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(1, 1, size - 2, size - 2, 8, 8)
-        pen = painter.pen()
-        panel_color = QColor(
-            self.theme_colors["popup"]
-            if hasattr(self, "theme_colors")
-            else "#ffffff"
-        )
-        pen.setColor(panel_color)
-        pen.setWidth(max(2, size // 12))
-        pen.setStyle(Qt.PenStyle.SolidLine)
-        painter.setPen(pen)
-        center = size // 2
-        radius = max(3, size // 9)
-        painter.drawEllipse(center - radius, center - radius, radius * 2, radius * 2)
-        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            painter.drawLine(center + dx * radius, center + dy * radius, center + dx * size // 3, center + dy * size // 3)
-            painter.drawEllipse(center + dx * size // 3 - radius // 2, center + dy * size // 3 - radius // 2, radius, radius)
+        painter.drawRoundedRect(1, 1, size - 2, size - 2, max(6, size // 4), max(6, size // 4))
+        painter.setPen(QColor("#ffffff"))
+        font = painter.font()
+        font.setPixelSize(max(9, int(size * (0.36 if len(self.extension_initials(definition)) > 1 else 0.44))))
+        font.setWeight(QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, self.extension_initials(definition))
         painter.end()
         return QIcon(pixmap)
+
+    @staticmethod
+    def extension_initials(definition):
+        words = [word for word in definition.get("name", "").replace("&", " ").split()
+                 if word.casefold() not in {"grom", "and", "the", "и"}]
+        return "".join(word[0] for word in words[:2]).upper() or "?"
 
     def extensions_toolbar_icon(self):
         path = (
@@ -852,11 +834,9 @@ class BuiltinExtensionsMixin:
             return ""
 
     def extension_icon_markup(self, definition, css_class="extension-icon"):
-        source = self.extension_icon_data_uri(definition["id"])
-        if source:
-            return f'<img class="{css_class}" src="{source}" alt="">'
         color = html_lib.escape(definition.get("color", "#54708f"))
-        return f'<span class="{css_class} icon-placeholder" style="--icon-color:{color}"><i></i></span>'
+        initials = html_lib.escape(self.extension_initials(definition))
+        return f'<span class="{css_class} icon-placeholder" style="--icon-color:{color}">{initials}</span>'
 
     def extensions_popup_html(self, extension_id=None, stat_value=None):
         colors = self.theme_colors
@@ -922,7 +902,7 @@ class BuiltinExtensionsMixin:
             .icon-button{{width:34px;height:34px;border:0;border-radius:50%;background:transparent;font-size:24px;line-height:1;cursor:pointer}}.icon-button:hover{{background:var(--hover)}}
             .list{{overflow-y:auto;padding:7px 7px 10px}}.list::-webkit-scrollbar,.detail::-webkit-scrollbar{{width:8px}}.list::-webkit-scrollbar-track,.detail::-webkit-scrollbar-track{{background:transparent}}.list::-webkit-scrollbar-thumb,.detail::-webkit-scrollbar-thumb{{background:#555a61;border-radius:999px;border:2px solid transparent;background-clip:content-box}}
             .extension-row{{position:relative;display:flex;align-items:center;min-height:64px;border-radius:7px;animation:rowIn .28s ease both;animation-delay:var(--delay)}}.extension-row:hover{{background:var(--hover)}}.extension-main{{width:100%;min-width:0;height:64px;display:grid;grid-template-columns:38px minmax(0,1fr) 18px;align-items:center;gap:11px;padding:7px 58px 7px 9px;border:0;background:transparent;text-align:left;cursor:pointer}}.extension-copy{{min-width:0}}.extension-copy strong,.extension-copy small{{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.extension-copy strong{{font-weight:600}}.extension-copy small{{margin-top:5px;color:var(--muted);font-size:12px}}.chevron{{font-size:22px;color:var(--muted)}}
-            .extension-icon,.hero-icon{{width:34px;height:34px;object-fit:contain;border-radius:8px}}.icon-placeholder{{position:relative;display:block;background:var(--icon-color)}}.icon-placeholder:before,.icon-placeholder:after,.icon-placeholder i:before,.icon-placeholder i:after{{content:"";position:absolute;width:6px;height:6px;border:2px solid rgba(255,255,255,.9);border-radius:50%}}.icon-placeholder:before{{left:7px;top:7px}}.icon-placeholder:after{{right:7px;top:7px}}.icon-placeholder i:before{{left:7px;bottom:7px}}.icon-placeholder i:after{{right:7px;bottom:7px}}
+            .extension-icon,.hero-icon{{width:34px;height:34px;object-fit:contain;border-radius:8px}}.icon-placeholder{{display:grid;place-items:center;background:var(--icon-color);color:#fff;font-size:11px;font-weight:750;letter-spacing:-.35px}}
             .switch{{position:absolute;right:12px;width:36px;height:21px}}.switch input{{display:none}}.switch span{{position:absolute;inset:0;border-radius:99px;background:var(--border);transition:.2s;cursor:pointer}}.switch span:after{{content:"";position:absolute;width:15px;height:15px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}}.switch input:checked+span{{background:var(--accent)}}.switch input:checked+span:after{{transform:translateX(15px)}}
             footer{{height:52px;padding:5px 8px;border-top:1px solid var(--border)}}footer button{{width:100%;height:40px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}}footer button:hover{{background:var(--hover)}}.manage-icon{{display:inline-block;width:14px;height:14px;margin:0 12px 0 4px;border:2px solid currentColor;border-radius:4px;vertical-align:-2px}}
             .detail-header{{display:grid;grid-template-columns:38px 1fr 38px;gap:8px}}.detail{{overflow-y:auto;padding:15px;animation:pageIn .24s ease}}.hero{{display:grid;grid-template-columns:58px 1fr;gap:14px;align-items:center;padding:17px 0 20px;border-bottom:1px solid var(--border)}}.hero-icon{{width:52px;height:52px;border-radius:12px}}.hero h2{{font-size:18px}}.hero p,.note{{margin-top:6px;color:var(--muted);line-height:1.45}}.enable-row{{display:flex;align-items:center;justify-content:space-between;padding:18px 2px;border-bottom:1px solid var(--border)}}.enable-row small{{display:block;margin-top:4px;color:var(--muted)}}.switch.large{{position:relative;right:auto;width:42px;height:24px}}.switch.large span:after{{width:18px;height:18px}}.switch.large input:checked+span:after{{transform:translateX(18px)}}.controls{{display:grid;gap:20px;padding:21px 2px}}.range-row span{{display:flex;justify-content:space-between;margin-bottom:10px}}.range-row output{{color:var(--muted)}}input[type=range]{{width:100%;accent-color:var(--accent)}}.stat{{display:flex;align-items:baseline;gap:10px}}.stat strong{{font-size:32px;color:var(--accent)}}.stat span{{color:var(--muted)}}.primary{{height:40px;margin-top:14px;padding:0 14px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}}
@@ -1317,7 +1297,8 @@ class BuiltinExtensionsMixin:
             QSlider::handle:horizontal {{
                 width:18px; margin:-6px 0; border-radius:9px; background:{colors['accent']};
             }}
-            QScrollArea {{ background:transparent; border:none; }}
+            QScrollArea, QScrollArea::viewport {{ background:{colors['popup']}; border:none; }}
+            QWidget#extensionRowsContainer {{ background:{colors['popup']}; }}
             QScrollBar:vertical {{ width:8px; margin:2px; background:transparent; }}
             QScrollBar::handle:vertical {{
                 min-height:34px; background:#555a61; border-radius:4px;
@@ -1330,6 +1311,8 @@ class BuiltinExtensionsMixin:
     def _build_extensions_list_page(self, popup, stack):
         page = QWidget()
         page.setObjectName("extensionsPage")
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page.setStyleSheet(f"background:{self.theme_colors['popup']};")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(14, 12, 10, 10)
         layout.setSpacing(9)
@@ -1353,7 +1336,15 @@ class BuiltinExtensionsMixin:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(True)
+        scroll.viewport().setAutoFillBackground(True)
+        viewport_palette = scroll.viewport().palette()
+        viewport_palette.setColor(QPalette.ColorRole.Window, QColor(self.theme_colors["popup"]))
+        scroll.viewport().setPalette(viewport_palette)
         body = QWidget()
+        body.setObjectName("extensionRowsContainer")
+        body.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        body.setStyleSheet(f"background:{self.theme_colors['popup']};")
         rows = QVBoxLayout(body)
         rows.setContentsMargins(0, 2, 4, 2)
         rows.setSpacing(6)

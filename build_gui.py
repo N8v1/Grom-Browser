@@ -38,7 +38,7 @@ except Exception as exc:
 
 ROOT = Path(__file__).resolve().parent
 MAIN_SCRIPT = ROOT / "grom_browser.py"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 VERSION_FILE = ROOT / "version_info.txt"
 APP_ICON = ROOT / "browser_icon.ico"
 

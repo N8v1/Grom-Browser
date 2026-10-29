@@ -6,7 +6,7 @@
 
 A Windows desktop browser built with Python, PySide6, Qt WebView, and Microsoft Edge WebView2.
 
-**Current release:** 1.1.1  
+**Current release:** 1.1.2 · [Release notes](CHANGELOG.md)  
 **Developer:** Ilyin Nikita Nikolaevich N8  
 **Интерфейс:** English and Russian
 
@@ -102,7 +102,7 @@ Click **Build application**. The application folder is created at `dist/Grom/`; 
 
 ### Build the installer
 
-Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), open `GromInstaller.iss` in Inno Setup Compiler, and select **Compile**. The installer will be written to `installer_output/Grom-Setup-1.1.1.exe`.
+Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), open `GromInstaller.iss` in Inno Setup Compiler, and select **Compile**. The installer will be written to `installer_output/Grom-Setup-1.1.2.exe`.
 
 You can also compile it from PowerShell:
 

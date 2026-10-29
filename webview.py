@@ -242,7 +242,6 @@ class BrowserWebView(QWidget):
         self._refresh_surface_when_shown = False
         self._tab_preview_pixmap = QPixmap()
         self._native_context_pending = False
-        self._google_account_fallback_pending = False
         self.force_qt_click_bridge = False
         self.popup_id = ""
         self.popup_opener_browser = None
@@ -318,11 +317,6 @@ class BrowserWebView(QWidget):
                     event.accept()
                     return True
                 position = event.position()
-                QTimer.singleShot(
-                    0,
-                    lambda x=position.x(), y=position.y():
-                    self._request_google_account_fallback(x, y),
-                )
                 QTimer.singleShot(0, self._request_selection_quick_action)
         return super().eventFilter(watched, event)
 
@@ -432,40 +426,6 @@ class BrowserWebView(QWidget):
                 {"action": "selection_quick", "text": str(text)}
             ) if str(text or "").strip() else None,
         )
-
-    def _request_google_account_fallback(self, x, y):
-        if self._google_account_fallback_pending or self.internal_page:
-            return
-        self._google_account_fallback_pending = True
-        self.runJavaScript(
-            rf"""
-            (() => {{
-                const host = location.hostname.toLowerCase();
-                const googlePage = host === 'google.com'
-                    || host.endsWith('.google.com')
-                    || host === 'youtube.com'
-                    || host.endsWith('.youtube.com');
-                if (!googlePage) return '';
-                const target = document.elementFromPoint({float(x):.2f}, {float(y):.2f});
-                const frame = target?.closest?.('iframe');
-                const source = String(frame?.src || frame?.getAttribute?.('src') || '');
-                if (!source) return '';
-                const accountWidget = /(?:^|\\.)ogs\\.google\\.[^/]+\/.*widget\/account/i.test(source)
-                    || /accounts\\.google\\.[^/]+\/.*(?:account|chooser)/i.test(source);
-                return accountWidget ? location.href : '';
-            }})()
-            """,
-            self._google_account_fallback_result,
-        )
-
-    def _google_account_fallback_result(self, original_url):
-        self._google_account_fallback_pending = False
-        value = str(original_url or "")
-        if value:
-            self.browserCommand.emit({
-                "action": "google_account_switch_fallback",
-                "url": value,
-            })
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -675,6 +635,8 @@ class BrowserWebView(QWidget):
         else:
             self.internal_page = "settings"
         self.is_settings_page = self.internal_page == "settings"
+        if self.fullscreen_timer.interval() != 250:
+            self.fullscreen_timer.setInterval(250)
         self.web_view.loadHtml(html)
         self.urlChanged.emit(self._display_url_override)
 
@@ -1273,7 +1235,10 @@ class BrowserWebView(QWidget):
         if fullscreen != self._is_fullscreen:
             self._is_fullscreen = fullscreen
             self.fullScreenChanged.emit(fullscreen)
-        target_interval = 250 if fullscreen else 1500
+        # Internal pages use this probe to deliver queued UI commands. Poll
+        # more often so Enter/click does not appear ignored when a native
+        # WebView event is missed.
+        target_interval = 250 if fullscreen or self.internal_page else 500
         if self.fullscreen_timer.interval() != target_interval:
             self.fullscreen_timer.setInterval(target_interval)
 
@@ -1340,6 +1305,7 @@ class BrowserWebView(QWidget):
                 if (!window.__gromPopupBridgeInstalled) {
                     window.__gromPopupBridgeInstalled = true;
                     window.__gromPopupHandles = window.__gromPopupHandles || {};
+                    window.__gromNamedPopupHandles = window.__gromNamedPopupHandles || {};
                     const clonePopupMessage = value => {
                         try { return JSON.parse(JSON.stringify(value)); }
                         catch (_) { return String(value ?? ''); }
@@ -1348,12 +1314,19 @@ class BrowserWebView(QWidget):
                         try { return crypto.randomUUID(); }
                         catch (_) { return `grom-popup-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
                     };
-                    const createPopupProxy = initialUrl => {
+                    const createPopupProxy = (initialUrl, targetName='') => {
+                        const named = String(targetName || '').trim();
+                        const existing = named && window.__gromNamedPopupHandles[named];
+                        if (existing && !existing.closed) {
+                            if (initialUrl) existing.proxy.location = initialUrl;
+                            return existing.proxy;
+                        }
                         const id = makePopupId();
-                        const state = {id, closed:false, opened:false, proxy:null};
+                        const state = {id, closed:false, opened:false, proxy:null, name:named};
                         const navigate = value => {
                             const url = resolvePopupUrl(value);
                             if (!/^https?:/i.test(url) || state.closed) return;
+                            window.__gromPopupCommandsIssued = Number(window.__gromPopupCommandsIssued || 0) + 1;
                             window.__gromCommandQueue.push({
                                 action: state.opened ? 'popup_navigate' : 'open_popup',
                                 popup_id: id,
@@ -1381,6 +1354,7 @@ class BrowserWebView(QWidget):
                         const proxy = new Proxy(target, {
                             get(object, property) {
                                 if (property === 'location') return locationProxy;
+                                if (property === 'window' || property === 'self') return state.proxy;
                                 return object[property];
                             },
                             set(object, property, value) {
@@ -1390,6 +1364,7 @@ class BrowserWebView(QWidget):
                         });
                         state.proxy = proxy;
                         window.__gromPopupHandles[id] = state;
+                        if (named && named !== '_blank') window.__gromNamedPopupHandles[named] = state;
                         if (initialUrl) navigate(initialUrl);
                         return proxy;
                     };
@@ -1416,11 +1391,11 @@ class BrowserWebView(QWidget):
                         }
                         window.dispatchEvent(event);
                     };
-                    window.open = (url) => createPopupProxy(url);
+                    window.open = (url, target) => createPopupProxy(url, target);
                     window.__gromOpenPopup = createPopupProxy;
                 }
-                const openPopupFallback = value => {
-                    if (value) window.__gromOpenPopup?.(value);
+                const openPopupFallback = (value, target='_blank') => {
+                    if (value) window.__gromOpenPopup?.(value, target);
                 };
                 if (!window.__gromConsoleCaptureInstalled) {
                     window.__gromConsoleCaptureInstalled = true;
@@ -1457,11 +1432,26 @@ class BrowserWebView(QWidget):
                         });
                         return;
                     }
-                    if ((link.target || '').toLowerCase() === '_blank') {
+                    const target = String(link.target || '').trim().toLowerCase();
+                    if (target && !['_self', '_top', '_parent'].includes(target)) {
                         event.preventDefault();
                         event.stopPropagation();
-                        openPopupFallback(url);
+                        openPopupFallback(url, target);
                     }
+                }, true);
+                document.addEventListener('submit', event => {
+                    const form = event.target;
+                    const target = String(form?.target || '').trim().toLowerCase();
+                    if (!form || !target || ['_self', '_top', '_parent'].includes(target)) return;
+                    const method = String(form.method || 'get').toLowerCase();
+                    if (method !== 'get') return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const url = new URL(form.action || location.href, document.baseURI);
+                    for (const [key, value] of new FormData(form, event.submitter || undefined)) {
+                        if (typeof value === 'string') url.searchParams.append(key, value);
+                    }
+                    openPopupFallback(url.href, target);
                 }, true);
                 document.addEventListener('contextmenu', event => {
                     const image = event.target?.closest?.('img');

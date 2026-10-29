@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 1, 1, 0),
-    prodvers=(1, 1, 1, 0),
+    filevers=(1, 1, 2, 0),
+    prodvers=(1, 1, 2, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'Ilyin Nikita Nikolaevich N8'),
           StringStruct(u'FileDescription', u'Grom Browser'),
-          StringStruct(u'FileVersion', u'1.1.1'),
+          StringStruct(u'FileVersion', u'1.1.2'),
           StringStruct(u'InternalName', u'Grom'),
           StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Ilyin Nikita Nikolaevich N8'),
           StringStruct(u'OriginalFilename', u'Grom.exe'),
           StringStruct(u'ProductName', u'Grom Browser'),
-          StringStruct(u'ProductVersion', u'1.1.1'),
+          StringStruct(u'ProductVersion', u'1.1.2'),
           StringStruct(u'Comments', u'Author: Ilyin Nikita Nikolaevich N8')
         ]
       )

@@ -10,6 +10,7 @@ import subprocess
 import math
 import ctypes
 import difflib
+import shutil
 from ctypes import wintypes
 from datetime import datetime, timedelta
 
@@ -21,6 +22,8 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 def configure_webview_runtime():
     base_path = os.path.join(os.path.dirname(__file__), "browser_data")
     profile_id = "default"
+    if "--guest" in sys.argv:
+        profile_id = "guest"
     if "--profile" in sys.argv:
         position = sys.argv.index("--profile")
         if position + 1 < len(sys.argv):
@@ -36,12 +39,32 @@ def configure_webview_runtime():
     except (FileNotFoundError, json.JSONDecodeError, TypeError):
         settings = {}
     if settings.get("hardware_acceleration", True):
-        return
-    arguments = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
-    if "--disable-gpu" not in arguments:
-        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
-            f"{arguments} --disable-gpu".strip()
-        )
+        pass
+    else:
+        arguments = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        if "--disable-gpu" not in arguments:
+            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+                f"{arguments} --disable-gpu".strip()
+            )
+    # Keep WebView2 cookies and site data in a stable, writable location. Its
+    # default is next to the executable, so portable builds/updates can appear
+    # to lose logins when launched from a different folder.
+    local_app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    profile_folder = os.path.join(local_app_data, "GromBrowser", profile_id)
+    user_data_folder = os.path.join(profile_folder, "WebView2")
+    os.makedirs(profile_folder, exist_ok=True)
+    legacy_folders = [sys.executable + ".WebView2"]
+    if os.path.basename(sys.executable).lower() not in ("grom.exe",):
+        legacy_folders.append(os.path.join(os.path.dirname(__file__), "Grom.exe.WebView2"))
+    if profile_id == "default" and not os.path.exists(user_data_folder):
+        for legacy_folder in legacy_folders:
+            if os.path.isdir(legacy_folder):
+                try:
+                    shutil.copytree(legacy_folder, user_data_folder, dirs_exist_ok=True)
+                except OSError:
+                    pass
+                break
+    os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", user_data_folder)
 
 
 configure_webview_runtime()
@@ -97,7 +120,6 @@ WEB_PAGE_COMMANDS = {
     "popup_message_to_opener",
     "popup_message_to_child",
     "popup_close",
-    "google_account_switch_fallback",
     "twitch_message_context",
     "image_context",
     "text_context",
@@ -3083,30 +3105,6 @@ class Browser(BuiltinExtensionsMixin, ProfilesMixin, DownloadsMixin, InternalPag
         browser.popup_opener_browser = None
         browser.popup_id = ""
 
-    def open_google_account_chooser(self, browser, original_url):
-        if not browser or browser.url().toString() != str(original_url):
-            return
-        if self.browser_has_open_popup(browser):
-            return
-        return_url = QUrl(str(original_url))
-        host = return_url.host().lower()
-        if not (
-            host == "google.com"
-            or host.endswith(".google.com")
-            or host == "youtube.com"
-            or host.endswith(".youtube.com")
-        ):
-            return
-        chooser = QUrl("https://accounts.google.com/AccountChooser")
-        query = QUrlQuery()
-        query.addQueryItem("continue", return_url.toString())
-        if host == "mail.google.com":
-            query.addQueryItem("service", "mail")
-        elif host.endswith("youtube.com"):
-            query.addQueryItem("service", "youtube")
-        chooser.setQuery(query)
-        browser.setUrl(chooser)
-
     def handle_browser_command(self, command, source_browser=None):
         if not isinstance(command, dict) or not source_browser:
             return
@@ -3160,13 +3158,6 @@ class Browser(BuiltinExtensionsMixin, ProfilesMixin, DownloadsMixin, InternalPag
                 index = self.tab_index_for_browser(popup)
                 if index >= 0:
                     self.remove_tab_now(index)
-        elif action == "google_account_switch_fallback" and source_browser:
-            original_url = str(command.get("url", source_browser.url().toString()))
-            QTimer.singleShot(
-                700,
-                lambda browser=source_browser, url=original_url:
-                self.open_google_account_chooser(browser, url),
-            )
         elif action == "twitch_message_context" and source_browser:
             self.show_twitch_message_context_menu(command, source_browser)
         elif action == "image_context" and source_browser:
@@ -4137,93 +4128,83 @@ class Browser(BuiltinExtensionsMixin, ProfilesMixin, DownloadsMixin, InternalPag
         def command_visible(name, default=False):
             return bool(menu_commands.get(name, default)) if isinstance(menu_commands, dict) else default
 
-        new_window_button = self.create_popup_action("Новое окно", "Ctrl+N")
+        new_window_button = self.create_popup_action('\u041d\u043e\u0432\u043e\u0435 \u043e\u043a\u043d\u043e', 'Ctrl+N')
         new_window_button.clicked.connect(lambda: (popup.close(), self.launch_new_window()))
         layout.addWidget(new_window_button)
 
-        new_tab_button = self.create_popup_action("Новая вкладка", "Ctrl+T")
+        new_tab_button = self.create_popup_action('\u041d\u043e\u0432\u0430\u044f \u0432\u043a\u043b\u0430\u0434\u043a\u0430', 'Ctrl+T')
         new_tab_button.clicked.connect(lambda: (popup.close(), self.add_new_tab()))
         layout.addWidget(new_tab_button)
 
-        private_button = self.create_popup_action("Новая приватная вкладка", "Ctrl+Shift+N")
+        private_button = self.create_popup_action('\u041d\u043e\u0432\u0430\u044f \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u0430\u044f \u0432\u043a\u043b\u0430\u0434\u043a\u0430', 'Ctrl+Shift+N')
         private_button.clicked.connect(lambda: (popup.close(), self.add_private_tab()))
         layout.addWidget(private_button)
         layout.addWidget(self.popup_separator())
 
-        history_button = self.create_popup_action("История", "Ctrl+H")
-        history_button.clicked.connect(
-            lambda: (popup.close(), QTimer.singleShot(0, self.show_history_popup))
-        )
+        history_button = self.create_popup_action('\u0418\u0441\u0442\u043e\u0440\u0438\u044f', 'Ctrl+H')
+        history_button.clicked.connect(lambda: (popup.close(), QTimer.singleShot(0, self.show_history_popup)))
         layout.addWidget(history_button)
 
-        downloads_button = self.create_popup_action("Загрузки", "Ctrl+J")
-        downloads_button.clicked.connect(
-            lambda: (popup.close(), QTimer.singleShot(0, self.show_downloads_popup))
-        )
+        downloads_button = self.create_popup_action('\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0438', 'Ctrl+J')
+        downloads_button.clicked.connect(lambda: (popup.close(), QTimer.singleShot(0, self.show_downloads_popup)))
         layout.addWidget(downloads_button)
 
-        if command_visible("tab_search", True):
-            tab_search_button = self.create_popup_action("Поиск по вкладкам", "Ctrl+Shift+A")
-            tab_search_button.clicked.connect(
-                lambda: (popup.close(), QTimer.singleShot(0, self.show_tab_search))
-            )
+        if command_visible('tab_search', True):
+            tab_search_button = self.create_popup_action('\u041f\u043e\u0438\u0441\u043a \u043f\u043e \u0432\u043a\u043b\u0430\u0434\u043a\u0430\u043c', 'Ctrl+Shift+A')
+            tab_search_button.clicked.connect(lambda: (popup.close(), QTimer.singleShot(0, self.show_tab_search)))
             layout.addWidget(tab_search_button)
 
-        if command_visible("find_page", True):
-            find_button = self.create_popup_action("Найти на странице", "Ctrl+F")
+        if command_visible('find_page', True):
+            find_button = self.create_popup_action('\u041d\u0430\u0439\u0442\u0438 \u043d\u0430 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0435', 'Ctrl+F')
             find_button.clicked.connect(lambda: (popup.close(), self.show_find_bar()))
             layout.addWidget(find_button)
+
         rare_commands_visible = any((
-            command_visible("screenshot"),
-            command_visible("split_screen"),
-            command_visible("developer_tools"),
-            command_visible("install_site"),
+            command_visible('screenshot'),
+            command_visible('split_screen'),
+            command_visible('developer_tools'),
+            command_visible('install_site'),
         ))
         if rare_commands_visible:
             layout.addWidget(self.popup_separator())
 
-        if command_visible("screenshot"):
-            screenshot_button = self.create_popup_action("Сделать скриншот", "Ctrl+Shift+S")
-            screenshot_button.clicked.connect(
-                lambda: (popup.close(), QTimer.singleShot(0, self.show_screenshot_menu))
-            )
+        if command_visible('screenshot'):
+            screenshot_button = self.create_popup_action('\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442', 'Ctrl+Shift+S')
+            screenshot_button.clicked.connect(lambda: (popup.close(), QTimer.singleShot(0, self.show_screenshot_menu)))
             layout.addWidget(screenshot_button)
 
         workspace = self.current_workspace()
-        if command_visible("split_screen"):
-            split_text = "Закрыть разделение" if workspace and workspace.is_split() else "Разделить экран"
+        if command_visible('split_screen'):
+            split_text = '\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435' if workspace and workspace.is_split() else '\u0420\u0430\u0437\u0434\u0435\u043b\u0438\u0442\u044c \u044d\u043a\u0440\u0430\u043d'
             split_button = self.create_popup_action(split_text)
             split_button.clicked.connect(lambda: (popup.close(), self.toggle_split_screen()))
             layout.addWidget(split_button)
 
-        if command_visible("developer_tools"):
-            devtools_button = self.create_popup_action("Инструменты разработчика", "F12")
+        if command_visible('developer_tools'):
+            devtools_button = self.create_popup_action('\u0418\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u044b \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u0430', 'F12')
             devtools_button.clicked.connect(lambda: (popup.close(), self.toggle_devtools()))
             layout.addWidget(devtools_button)
 
-        if command_visible("install_site"):
-            install_button = self.create_popup_action("Установить сайт")
+        if command_visible('install_site'):
+            install_button = self.create_popup_action('\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0441\u0430\u0439\u0442')
             install_button.clicked.connect(lambda: (popup.close(), self.install_current_site_app()))
             layout.addWidget(install_button)
 
         if rare_commands_visible:
             layout.addWidget(self.popup_separator())
 
-        additional_tools = self.create_popup_action("Дополнительные инструменты", "›")
-        additional_tools.setProperty("gromAdditionalTools", True)
+        additional_tools = self.create_popup_action('\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u044b', '\u203a')
+        additional_tools.setProperty('gromAdditionalTools', True)
         additional_tools.installEventFilter(self)
-        additional_tools.clicked.connect(
-            lambda _checked=False, button=additional_tools:
-            self.show_additional_tools_menu(button)
-        )
+        additional_tools.clicked.connect(lambda _checked=False, button=additional_tools: self.show_additional_tools_menu(button))
         layout.addWidget(additional_tools)
         layout.addWidget(self.popup_separator())
 
-        settings_button = self.create_popup_action("Настройки")
+        settings_button = self.create_popup_action('\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438')
         settings_button.clicked.connect(lambda: (popup.close(), self.open_settings_tab()))
         layout.addWidget(settings_button)
 
-        about_button = self.create_popup_action("О разработчике")
+        about_button = self.create_popup_action('\u041e \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u0435')
         about_button.clicked.connect(lambda: (popup.close(), self.show_about_developer()))
         layout.addWidget(about_button)
 
@@ -4927,7 +4908,7 @@ class Browser(BuiltinExtensionsMixin, ProfilesMixin, DownloadsMixin, InternalPag
         QMessageBox.about(
             self,
             title,
-            f"Grom Browser\n{version}: 1.1.0\n{role}: {developer}",
+            f"Grom Browser\n{version}: 1.1.2\n{role}: {developer}",
         )
 
     def add_private_tab(self):
@@ -7271,6 +7252,10 @@ class Browser(BuiltinExtensionsMixin, ProfilesMixin, DownloadsMixin, InternalPag
             browser.iconChanged.emit(browser._icon)
             return
         shortcuts = {
+            "\u044e\u0442\u0443\u0431": "https://www.youtube.com/",
+            "\u044e\u0442\u044c\u044e\u0431": "https://www.youtube.com/",
+            "\u0442\u0432\u0438\u0447": "https://www.twitch.tv/",
+            "\u0433\u0443\u0433\u043b": "https://www.google.com/",
             "youtube": "https://www.youtube.com/", "ютуб": "https://www.youtube.com/",
             "google": "https://www.google.com/", "гугл": "https://www.google.com/",
             "gmail": "https://mail.google.com/", "гмейл": "https://mail.google.com/",
